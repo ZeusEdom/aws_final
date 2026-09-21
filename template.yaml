@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Serverless Weather Dashboard
+  S3 + API Gateway HTTP API + AWS Lambda + DynamoDB + EventBridge Schedule
+
+Globals:
+  Function:
+    Timeout: 15
+    MemorySize: 128
+    Runtime: python3.12
+
+Parameters:
+  OpenWeatherApiKey:
+    Type: String
+    Default: 'e6bf3b2aa25e42d37925a5eb03e80390'
+    Description: OpenWeatherMap API Key
+
+  Cities:
+    Type: String
+    Default: 'Hanoi,Ho Chi Minh City,Da Nang'
+    Description: Comma separated list of cities to track
+
+Resources:
+  # 1. DynamoDB Table với TTL enabled
+  WeatherDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: WeatherData
+      AttributeDefinitions:
+        - AttributeName: city
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: city
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # 2. Lambda Fetcher Function (Ghi dữ liệu vào DynamoDB mỗi 30 phút)
+  WeatherFetcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: weather-fetcher
+      CodeUri: ./
+      Handler: lambda_fetcher.handler
+      Environment:
+        Variables:
+          OWM_API_KEY: !Ref OpenWeatherApiKey
+          TABLE_NAME: !Ref WeatherDynamoDBTable
+          CITIES: !Ref Cities
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WeatherDynamoDBTable
+      Events:
+        TimerSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(30 minutes)
+            Name: weather-fetch-schedule
+
+  # 3. Lambda API Handler Function & HTTP API Gateway
+  WeatherApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: weather-api-handler
+      CodeUri: ./
+      Handler: lambda_api_handler.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref WeatherDynamoDBTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref WeatherDynamoDBTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /weather
+            Method: GET
+
+  # 4. S3 Bucket cho Static Website Hosting
+  WeatherWebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'weather-dashboard-static-${AWS::AccountId}-${AWS::Region}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+Outputs:
+  HttpApiUrl:
+    Description: "API Gateway Endpoint Invoke URL"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/weather"
+  
+  S3WebsiteUrl:
+    Description: "S3 Website URL"
+    Value: !GetAtt WeatherWebsiteBucket.WebsiteURL

@@ -1,0 +1,32 @@
+{
+  "_ghi_chu": "File này chứa 2 policy riêng biệt. Khi dán vào IAM Console (tab JSON của inline policy), chỉ copy phần object bên trong 'FetcherDynamoDBWritePolicy' hoặc 'ApiDynamoDBReadPolicy' (từ dấu { đến }), KHÔNG copy cả file này. Nhớ thay YOUR_REGION và YOUR_ACCOUNT_ID (hoặc dùng ARN dạng có wildcard region/account như bên dưới nếu chưa biết account id).",
+
+  "FetcherDynamoDBWritePolicy_ganCho_weather-fetcher-role": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "WriteWeatherTable",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:PutItem"
+        ],
+        "Resource": "arn:aws:dynamodb:*:*:table/WeatherData"
+      }
+    ]
+  },
+
+  "ApiDynamoDBReadPolicy_ganCho_weather-api-role": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "ReadWeatherTable",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:Query",
+          "dynamodb:GetItem"
+        ],
+        "Resource": "arn:aws:dynamodb:*:*:table/WeatherData"
+      }
+    ]
+  }
+}

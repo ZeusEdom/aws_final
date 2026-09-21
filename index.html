@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Weather Station — Serverless Telemetry Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg: #0E1720;
+    --panel: #16222E;
+    --panel-line: #263542;
+    --text: #E7EDF2;
+    --text-dim: #7E93A3;
+    --sky: #5FB4D9;
+    --amber: #E8A25C;
+    --good: #6FBF8B;
+  }
+  *{ box-sizing: border-box; margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    padding: 36px 20px 80px;
+  }
+  .wrap{ max-width: 1040px; margin: 0 auto; }
+
+  header{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    border-bottom: 1px solid var(--panel-line);
+    padding-bottom: 20px; margin-bottom: 28px;
+    flex-wrap: wrap; gap: 16px;
+  }
+  h1{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: clamp(26px, 4vw, 36px);
+    letter-spacing: -0.01em;
+  }
+  header p{ color: var(--text-dim); font-size: 13px; margin-top: 6px; }
+  .live-dot{
+    width: 8px; height: 8px; border-radius: 50%; background: var(--good);
+    display: inline-block; margin-right: 8px;
+    box-shadow: 0 0 0 0 rgba(111,191,139,0.6);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(111,191,139,0.5); }
+    70%{ box-shadow: 0 0 0 8px rgba(111,191,139,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(111,191,139,0); }
+  }
+  .status{ font-size: 12px; color: var(--text-dim); }
+
+  .mode-badge{
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: rgba(95, 180, 217, 0.12);
+    color: var(--sky);
+    border: 1px solid rgba(95, 180, 217, 0.3);
+    margin-top: 8px;
+  }
+
+  .city-bar{
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; margin-bottom: 24px; flex-wrap: wrap;
+  }
+  .city-tabs{ display:flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+  .city-tab{
+    background: var(--panel); border: 1px solid var(--panel-line); color: var(--text-dim);
+    padding: 8px 14px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500;
+    cursor: pointer; border-radius: 4px; transition: all .15s ease;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .city-tab.active{ border-color: var(--sky); color: var(--sky); background: rgba(95, 180, 217, 0.1); }
+  .city-tab:hover{ color: var(--text); border-color: var(--text-dim); }
+  .city-tab .close-btn{
+    font-size: 10px; opacity: 0.6; padding: 2px; border-radius: 50%;
+  }
+  .city-tab .close-btn:hover{ color: var(--amber); opacity: 1; }
+
+  .add-city-form{ display: flex; gap: 6px; }
+  .add-city-input{
+    background: var(--panel); border: 1px solid var(--panel-line); color: var(--text);
+    padding: 8px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    border-radius: 4px; outline: none; width: 180px; transition: border-color 0.15s;
+  }
+  .add-city-input:focus{ border-color: var(--sky); }
+  .add-city-btn{
+    background: rgba(95, 180, 217, 0.15); border: 1px solid rgba(95, 180, 217, 0.4); color: var(--sky);
+    padding: 8px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    border-radius: 4px; cursor: pointer; font-weight: 500; transition: all 0.15s;
+  }
+  .add-city-btn:hover{ background: var(--sky); color: var(--bg); }
+
+  .hero{
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    padding: 32px 40px;
+    display:flex; justify-content: space-between; align-items:center;
+    margin-bottom: 20px; flex-wrap: wrap; gap: 24px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  }
+  .hero-temp{
+    font-family: 'Fraunces', serif; font-weight: 400;
+    font-size: clamp(56px, 9vw, 96px); line-height: 1;
+    color: var(--text);
+  }
+  .hero-temp span{ font-size: 0.35em; color: var(--text-dim); vertical-align: top; }
+  .hero-desc{ text-transform: capitalize; color: var(--amber); font-size: 17px; margin-top: 8px; font-weight: 500; }
+  .hero-city{ font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+  .hero-feels{ text-align:right; }
+  .hero-feels .label{ font-size: 11px; color: var(--text-dim); letter-spacing: 0.05em; }
+  .hero-feels .val{ font-size: 26px; margin-top: 6px; color: var(--text); font-weight: 600; }
+
+  .grid{
+    display:grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px;
+  }
+  .stat{
+    background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px;
+    padding: 20px;
+  }
+  .stat .label{ font-size: 11px; color: var(--text-dim); letter-spacing: 0.05em; }
+  .stat .val{ font-size: 24px; margin-top: 8px; color: var(--sky); font-weight: 600; }
+
+  .chart-panel{
+    background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px;
+    padding: 28px; margin-bottom: 28px;
+    position: relative;
+  }
+  .chart-header{
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+  }
+  .chart-title{ font-size: 12px; color: var(--text-dim); letter-spacing: 0.05em; font-weight: 600; }
+  .chart-metrics{ display: flex; gap: 20px; font-size: 12px; }
+  .metric-item{ color: var(--text-dim); }
+  .metric-item span{ color: var(--text); font-weight: 600; margin-left: 4px; }
+  .metric-item.max span{ color: var(--amber); }
+  .metric-item.min span{ color: var(--sky); }
+
+  .chart-container{ position: relative; width: 100%; height: 220px; }
+  svg{ width: 100%; height: 100%; overflow: visible; }
+  .grid-line{ stroke: var(--panel-line); stroke-dasharray: 4,4; stroke-width: 1; }
+  .axis-text{ fill: var(--text-dim); font-size: 10px; font-family: 'IBM Plex Mono', monospace; }
+  .sparkline{ fill: none; stroke: var(--sky); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .sparkline-fill{ fill: url(#grad); opacity: 0.35; }
+  .data-point{ fill: var(--bg); stroke: var(--sky); stroke-width: 2.5; r: 4; transition: all 0.15s ease; cursor: pointer; }
+  .data-point:hover{ fill: var(--sky); r: 6.5; filter: drop-shadow(0 0 6px var(--sky)); }
+  .point-label{ fill: var(--text); font-size: 10px; font-family: 'IBM Plex Mono', monospace; text-anchor: middle; }
+
+  .chart-tooltip{
+    position: absolute; display: none; pointer-events: none;
+    background: #1C2B38; border: 1px solid var(--sky); padding: 8px 12px;
+    border-radius: 4px; font-size: 11px; z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    transform: translate(-50%, -120%);
+    white-space: nowrap;
+  }
+  .chart-tooltip .tt-time{ color: var(--text-dim); margin-bottom: 2px; }
+  .chart-tooltip .tt-temp{ color: var(--sky); font-weight: 600; font-size: 13px; }
+
+  .table-panel{
+    background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px;
+    padding: 24px;
+  }
+  .table-title{ font-size: 12px; color: var(--text-dim); letter-spacing: 0.05em; font-weight: 600; margin-bottom: 16px; }
+  .table-wrap{ overflow-x: auto; }
+  table{ width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+  th{ color: var(--text-dim); font-weight: 500; border-bottom: 1px solid var(--panel-line); padding: 10px 12px; }
+  td{ padding: 12px; border-bottom: 1px solid rgba(38, 53, 66, 0.5); color: var(--text); }
+  tr:last-child td{ border-bottom: none; }
+  tr:hover td{ background: rgba(95, 180, 217, 0.04); }
+
+  .empty, .error{
+    text-align:center; color: var(--text-dim); padding: 60px 20px; font-size: 14px;
+  }
+  .error{ color: var(--amber); }
+
+  footer{ margin-top: 48px; color: var(--text-dim); font-size: 11px; text-align:center; }
+
+  @media (max-width: 640px){
+    .grid{ grid-template-columns: 1fr; }
+    .hero{ flex-direction: column; align-items: flex-start; }
+    .hero-feels{ text-align: left; }
+    .chart-header{ flex-direction: column; align-items: flex-start; }
+    .add-city-form{ width: 100%; }
+    .add-city-input{ flex: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Weather Station</h1>
+      <p>Serverless telemetry — S3 · API Gateway · Lambda · DynamoDB</p>
+      <div id="modeBadge" class="mode-badge">Đang khởi tạo...</div>
+    </div>
+    <div class="status"><span class="live-dot"></span><span id="statusText">Đang tải…</span></div>
+  </header>
+
+  <div class="city-bar">
+    <div class="city-tabs" id="cityTabs"></div>
+    <form class="add-city-form" id="addCityForm">
+      <input type="text" class="add-city-input" id="cityInput" placeholder="Thêm thành phố..." required />
+      <button type="submit" class="add-city-btn">+ Thêm</button>
+    </form>
+  </div>
+
+  <div id="content">
+    <div class="empty">Đang tải dữ liệu thời tiết…</div>
+  </div>
+
+  <footer>Data telemetry refreshes via EventBridge / Direct Forecast API · AWS Free Tier Ready</footer>
+</div>
+
+<script>
+  const API_URL = "https://0ehzg82gn4.execute-api.ap-southeast-1.amazonaws.com/weather";
+  const OWM_API_KEY = "e6bf3b2aa25e42d37925a5eb03e80390";
+
+  const DEFAULT_CITIES = [
+    { name: 'Hanoi', label: 'Hà Nội' },
+    { name: 'Ho Chi Minh City', label: 'TP. HCM' },
+    { name: 'Da Nang', label: 'Đà Nẵng' },
+    { name: 'Hue', label: 'Huế' },
+    { name: 'Nha Trang', label: 'Nha Trang' },
+    { name: 'Da Lat', label: 'Đà Lạt' },
+    { name: 'Haiphong', label: 'Hải Phòng' },
+    { name: 'Can Tho', label: 'Cần Thơ' },
+    { name: 'Tokyo', label: 'Tokyo' },
+    { name: 'London', label: 'London' }
+  ];
+
+  let cities = JSON.parse(localStorage.getItem('weather_cities')) || DEFAULT_CITIES;
+  let currentCity = cities[0].name;
+
+  const contentEl = document.getElementById('content');
+  const statusEl = document.getElementById('statusText');
+  const modeBadgeEl = document.getElementById('modeBadge');
+  const cityTabsEl = document.getElementById('cityTabs');
+  const addCityForm = document.getElementById('addCityForm');
+  const cityInput = document.getElementById('cityInput');
+
+  function saveCities(){
+    localStorage.setItem('weather_cities', JSON.stringify(cities));
+  }
+
+  function renderCityTabs(){
+    cityTabsEl.innerHTML = cities.map(c => `
+      <button class="city-tab ${c.name === currentCity ? 'active' : ''}" data-city="${c.name}">
+        ${c.label || c.name}
+        ${cities.length > 1 ? `<span class="close-btn" data-remove="${c.name}">✕</span>` : ''}
+      </button>
+    `).join('');
+  }
+
+  cityTabsEl.addEventListener('click', (e) => {
+    const removeCity = e.target.dataset.remove;
+    if(removeCity){
+      e.stopPropagation();
+      cities = cities.filter(c => c.name !== removeCity);
+      if(currentCity === removeCity){
+        currentCity = cities[0]?.name || 'Hanoi';
+      }
+      saveCities();
+      renderCityTabs();
+      loadData();
+      return;
+    }
+
+    const tab = e.target.closest('.city-tab');
+    if(!tab) return;
+    currentCity = tab.dataset.city;
+    renderCityTabs();
+    loadData();
+  });
+
+  addCityForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const query = cityInput.value.trim();
+    if(!query) return;
+
+    if(!cities.some(c => c.name.toLowerCase() === query.toLowerCase())){
+      cities.push({ name: query, label: query });
+      saveCities();
+    }
+    currentCity = query;
+    cityInput.value = '';
+    renderCityTabs();
+    loadData();
+  });
+
+  // Múi giờ Việt Nam: UTC+7
+  const VN_TZ = 'Asia/Ho_Chi_Minh';
+
+  function fmtTime(ts){
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString('vi-VN', { timeZone: VN_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  function fmtDateTime(ts){
+    const d = new Date(ts * 1000);
+    const now = new Date();
+    const todayVN = now.toLocaleDateString('vi-VN', { timeZone: VN_TZ, day: '2-digit', month: '2-digit' });
+    const dateVN  = d.toLocaleDateString('vi-VN', { timeZone: VN_TZ, day: '2-digit', month: '2-digit' });
+    const dayName = d.toLocaleDateString('vi-VN', { timeZone: VN_TZ, weekday: 'short' });
+    const time    = fmtTime(ts);
+
+    const todayDate = new Date(now.toLocaleDateString('en-US', { timeZone: VN_TZ }));
+    const itemDate  = new Date(d.toLocaleDateString('en-US',  { timeZone: VN_TZ }));
+    const diffDays  = Math.round((todayDate - itemDate) / 86400000);
+
+    let dayLabel;
+    if(diffDays === 0)      dayLabel = 'Hôm nay';
+    else if(diffDays === -1) dayLabel = 'Ngày mai';
+    else if(diffDays === 1)  dayLabel = 'Hôm qua';
+    else                     dayLabel = `${dayName} ${dateVN}`;
+
+    return { dayLabel, time, full: `${dayLabel} ${time}` };
+  }
+
+  function buildSVGChart(items){
+    if(items.length < 2) return '';
+    const temps = items.map(i => i.temperature);
+    const rawMin = Math.min(...temps), rawMax = Math.max(...temps);
+
+    const padVal = Math.max((rawMax - rawMin) * 0.2, 1);
+    const min = Math.floor(rawMin - padVal);
+    const max = Math.ceil(rawMax + padVal);
+    const range = (max - min) || 1;
+
+    const w = 920, h = 190, padX = 48, padTop = 20, padBot = 40; // padBot lớn hơn để chứa 2 dòng label
+    const innerW = w - padX * 2;
+    const innerH = h - padTop - padBot;
+
+    // Gắn thêm thông tin ngày cho mỗi điểm
+    const pts = items.map((it, i) => {
+      const x   = padX + (i / (items.length - 1)) * innerW;
+      const y   = h - padBot - ((it.temperature - min) / range) * innerH;
+      const dt  = fmtDateTime(it.timestamp);
+      const dateLabel = new Date(it.timestamp * 1000)
+        .toLocaleDateString('vi-VN', { timeZone: VN_TZ, day: '2-digit', month: '2-digit' });
+      return { x, y, temp: it.temperature, time: dt.time, dateLabel, dayLabel: dt.dayLabel, desc: it.description };
+    });
+
+    const line = pts.map((p,i) => (i===0?'M':'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
+    const fill = line + ` L${pts[pts.length-1].x},${h-padBot} L${pts[0].x},${h-padBot} Z`;
+
+    // Trục Y: đường ngang grid + nhãn °C
+    const yGridCount = 4;
+    let yGridSVG = '';
+    for(let i = 0; i <= yGridCount; i++){
+      const val  = min + (range / yGridCount) * i;
+      const yPos = h - padBot - (i / yGridCount) * innerH;
+      yGridSVG += `
+        <line class="grid-line" x1="${padX}" y1="${yPos}" x2="${w-padX}" y2="${yPos}" />
+        <text class="axis-text" x="${padX - 8}" y="${yPos + 3}" text-anchor="end">${val.toFixed(1)}°</text>
+      `;
+    }
+
+    // Trục X: nhãn giờ + ngày — phát hiện khi đổi ngày
+    let xLabelsSVG = '';
+    let dayDividersSVG = '';
+    let lastDate = null;
+    const stepX = Math.max(1, Math.ceil(pts.length / 10)); // tối đa ~10 nhãn
+
+    pts.forEach((p, idx) => {
+      // Đường kẻ dọc & nhãn ngày khi chuyển sang ngày mới
+      if(p.dateLabel !== lastDate){
+        lastDate = p.dateLabel;
+        if(idx > 0){ // không vẽ đường tại điểm đầu tiên
+          dayDividersSVG += `
+            <line x1="${p.x.toFixed(1)}" y1="${padTop}" x2="${p.x.toFixed(1)}" y2="${h - padBot + 4}"
+              stroke="#5FB4D9" stroke-opacity="0.35" stroke-dasharray="3,3" stroke-width="1.5"/>`;
+        }
+        // Nhãn ngày (dòng dưới cùng, to hơn, màu xanh)
+        xLabelsSVG += `
+          <text x="${p.x.toFixed(1)}" y="${h - 6}" text-anchor="middle"
+            style="fill:#5FB4D9;font-size:9px;font-family:'IBM Plex Mono',monospace;font-weight:600;">
+            ${p.dateLabel}
+          </text>`;
+      }
+
+      // Nhãn giờ (dòng trên, chỉ in thưa để tránh đè)
+      if(idx % stepX === 0 || idx === pts.length - 1){
+        xLabelsSVG += `
+          <text class="axis-text" x="${p.x.toFixed(1)}" y="${h - padBot + 14}"
+            text-anchor="middle">${p.time}</text>`;
+      }
+    });
+
+    // Các điểm tròn + nhãn nhiệt độ tại đỉnh/đáy
+    let pointsSVG = '';
+    pts.forEach((p, idx) => {
+      const isPeak   = (p.temp === rawMax);
+      const isTrough = (p.temp === rawMin);
+      const labelY   = isPeak ? p.y - 10 : p.y + 16;
+
+      pointsSVG += `
+        <circle class="data-point" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}"
+          data-time="${p.dateLabel} ${p.time}" data-temp="${p.temp.toFixed(1)}" data-desc="${p.desc}" />`;
+      if(isPeak || isTrough || idx === pts.length - 1){
+        pointsSVG += `<text class="point-label" x="${p.x.toFixed(1)}" y="${labelY.toFixed(1)}">${p.temp.toFixed(1)}°</text>`;
+      }
+    });
+
+    return `
+      <div class="chart-tooltip" id="tooltip">
+        <div class="tt-time" id="ttTime"></div>
+        <div class="tt-temp" id="ttTemp"></div>
+      </div>
+      <div class="chart-container">
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#5FB4D9" stop-opacity="0.5"/>
+              <stop offset="100%" stop-color="#5FB4D9" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          ${yGridSVG}
+          ${dayDividersSVG}
+          <path class="sparkline-fill" d="${fill}" />
+          <path class="sparkline" d="${line}" />
+          ${pointsSVG}
+          ${xLabelsSVG}
+        </svg>
+      </div>`;
+  }
+
+  function buildTable(items){
+    const reversed = items.slice().reverse();
+    let lastDayLabel = null;
+    const rows = reversed.map(it => {
+      const dt = fmtDateTime(it.timestamp);
+      let dayHeaderRow = '';
+      if(dt.dayLabel !== lastDayLabel){
+        lastDayLabel = dt.dayLabel;
+        dayHeaderRow = `
+          <tr style="background: rgba(95,180,217,0.06);">
+            <td colspan="7" style="padding: 10px 12px; font-size: 11px; color: var(--sky); letter-spacing: 0.08em; font-weight: 600;">
+              • ${dt.dayLabel.toUpperCase()}
+            </td>
+          </tr>`;
+      }
+      return `${dayHeaderRow}
+      <tr>
+        <td><strong>${dt.time}</strong></td>
+        <td>${it.temperature.toFixed(1)}°C</td>
+        <td>${it.feels_like.toFixed(1)}°C</td>
+        <td>${it.humidity}%</td>
+        <td>${it.pressure} hPa</td>
+        <td>${it.wind_speed} m/s</td>
+        <td style="text-transform: capitalize;">${it.description}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>GIỜ (GMT+7)</th>
+              <th>NHIỆT ĐỘ</th>
+              <th>CẢM GIÁC</th>
+              <th>ĐỘ ẨM</th>
+              <th>ÁP SUẤT</th>
+              <th>TỐC ĐỘ GIÓ</th>
+              <th>TRẠNG THÁI</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  // Lấy thời tiết HIỆN TẠI (cho Hero card)
+  async function fetchCurrentOWM(city){
+    const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${OWM_API_KEY}&units=metric&lang=vi`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Không tìm thấy thành phố "' + city + '".');
+    const data = await res.json();
+    return {
+      timestamp: data.dt,
+      temperature: data.main.temp,
+      feels_like: data.main.feels_like,
+      humidity: data.main.humidity,
+      pressure: data.main.pressure,
+      wind_speed: data.wind.speed,
+      description: data.weather[0].description,
+      icon: data.weather[0].icon
+    };
+  }
+
+  // Lấy DỰ BÁO 5 ngày tới (mỗi 3 giờ) cho Chart + Bảng
+  async function fetchForecastOWM(city){
+    const url = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(city)}&appid=${OWM_API_KEY}&units=metric&lang=vi&cnt=40`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Không tìm thấy thành phố "' + city + '".');
+    const data = await res.json();
+    // Sắp xếp tăng dần thời gian (từ gần nhất đến xa nhất)
+    return data.list.map(item => ({
+      timestamp: item.dt,
+      temperature: item.main.temp,
+      feels_like: item.main.feels_like,
+      humidity: item.main.humidity,
+      pressure: item.main.pressure,
+      wind_speed: item.wind.speed,
+      description: item.weather[0].description
+    })).sort((a,b) => a.timestamp - b.timestamp);
+  }
+
+  async function loadData(){
+    contentEl.innerHTML = '<div class="empty">Đang tải dữ liệu thời tiết…</div>';
+    statusEl.textContent = 'Đang tải…';
+
+    const isAWSConfigured = !API_URL.includes('REPLACE_WITH');
+
+    if (isAWSConfigured) {
+      modeBadgeEl.textContent = "AWS Live: API Gateway & DynamoDB Cloud Infrastructure";
+      try {
+        // Tải đồng thời cả Dữ liệu AWS DynamoDB thực + Dự báo 5 ngày
+        const [awsRes, forecastItems] = await Promise.all([
+          fetch(`${API_URL}?city=${encodeURIComponent(currentCity)}&limit=24`).then(r => r.ok ? r.json() : {data:[]}),
+          fetchForecastOWM(currentCity).catch(() => [])
+        ]);
+
+        const dbItems = (awsRes.data || []).sort((a,b) => a.timestamp - b.timestamp);
+        const current = dbItems.length > 0 ? dbItems[dbItems.length - 1] : (forecastItems[0] || {});
+
+        const chartItems = forecastItems.length > 0 ? forecastItems : dbItems;
+
+        renderAWSCombinedDashboard(current, dbItems, chartItems);
+        return;
+      } catch (err) {
+        console.warn("Lỗi AWS, chuyển về OWM:", err);
+      }
+    }
+
+    // ── CHẾ ĐỘ LOCAL FALLBACK ───────────────────────────────
+    modeBadgeEl.textContent = "Trực tiếp: OpenWeatherMap API";
+    try {
+      const [current, forecastItems] = await Promise.all([
+        fetchCurrentOWM(currentCity),
+        fetchForecastOWM(currentCity)
+      ]);
+      renderAWSCombinedDashboard(current, [], forecastItems);
+    } catch(err) {
+      contentEl.innerHTML = `<div class="error">Lỗi: ${err.message}</div>`;
+      statusEl.textContent = 'Lỗi';
+    }
+  }
+
+  function renderAWSCombinedDashboard(current, dbItems, chartItems){
+    const now = new Date();
+    const vnTime = now.toLocaleTimeString('vi-VN', { timeZone: VN_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+
+    const temps = chartItems.map(i => i.temperature);
+    const maxTemp = Math.max(...temps).toFixed(1);
+    const minTemp = Math.min(...temps).toFixed(1);
+    const avgTemp = (temps.reduce((a,b)=>a+b, 0) / temps.length).toFixed(1);
+
+    const hasDBData = dbItems.length > 0;
+
+    contentEl.innerHTML = `
+      <div class="hero">
+        <div>
+          <div class="hero-temp">${current.temperature ? current.temperature.toFixed(1) : '--'}<span>°C</span></div>
+          <div class="hero-desc">${current.description || 'Đang cập nhật'}</div>
+          <div class="hero-city">${currentCity} · Telemetry Live ${vnTime} (GMT+7)</div>
+        </div>
+        <div class="hero-feels">
+          <div class="label">CẢM GIÁC NHƯ</div>
+          <div class="val">${current.feels_like ? current.feels_like.toFixed(1) : '--'}°C</div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="stat"><div class="label">ĐỘ ẨM</div><div class="val">${current.humidity || '--'}%</div></div>
+        <div class="stat"><div class="label">ÁP SUẤT</div><div class="val">${current.pressure || '--'} hPa</div></div>
+        <div class="stat"><div class="label">TỐC ĐỘ GIÓ</div><div class="val">${current.wind_speed || '--'} m/s</div></div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div class="chart-title">BIỂU ĐỒ XU HƯỚNG NHIỆT ĐỘ — 5 NGÀY TỚI (${chartItems.length} MỐC DATA)</div>
+          <div class="chart-metrics">
+            <div class="metric-item max">Cao nhất:<span>${maxTemp}°C</span></div>
+            <div class="metric-item min">Thấp nhất:<span>${minTemp}°C</span></div>
+            <div class="metric-item">Trung bình:<span>${avgTemp}°C</span></div>
+          </div>
+        </div>
+        ${buildSVGChart(chartItems)}
+      </div>
+
+      ${hasDBData ? `
+      <div class="table-panel" style="margin-bottom: 24px; border-color: rgba(95, 180, 217, 0.4);">
+        <div class="table-title" style="color: var(--sky);">
+          NHẬT KÝ TELEMETRY LIVE TỪ AWS DYNAMODB (${dbItems.length} LẦN CÀO TỰ ĐỘNG BỞI LAMBDA)
+        </div>
+        ${buildForecastTable(dbItems, false)}
+      </div>` : ''}
+
+      <div class="table-panel">
+        <div class="table-title">DỰ BÁO LỊCH TRÌNH 5 NGÀY TỚI (OPENWEATHERMAP)</div>
+        ${buildForecastTable(chartItems, true)}
+      </div>
+    `;
+
+    statusEl.textContent = 'Cập nhật ' + vnTime + ' (GMT+7)';
+
+    // Tooltip
+    const tooltip = document.getElementById('tooltip');
+    const ttTime  = document.getElementById('ttTime');
+    const ttTemp  = document.getElementById('ttTemp');
+    document.querySelectorAll('.data-point').forEach(pt => {
+      pt.addEventListener('mouseenter', (e) => {
+        ttTime.textContent = `${e.target.dataset.time} — ${e.target.dataset.desc}`;
+        ttTemp.textContent = `${e.target.dataset.temp}°C`;
+        tooltip.style.display = 'block';
+        const r  = e.target.getBoundingClientRect();
+        const pr = document.querySelector('.chart-panel').getBoundingClientRect();
+        tooltip.style.left = (r.left - pr.left + 4) + 'px';
+        tooltip.style.top  = (r.top  - pr.top  - 8) + 'px';
+      });
+      pt.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+    });
+  }
+
+  // Bảng Dự Báo — hiện từ gần đến xa (không đảo ngược)
+  function buildForecastTable(items, isForecast){
+    let lastDayLabel = null;
+    const rows = items.map(it => {
+      const dt = fmtDateTime(it.timestamp);
+      let dayHeaderRow = '';
+      if(dt.dayLabel !== lastDayLabel){
+        lastDayLabel = dt.dayLabel;
+        dayHeaderRow = `
+          <tr style="background: rgba(95,180,217,0.06);">
+            <td colspan="7" style="padding:10px 12px;font-size:11px;color:var(--sky);letter-spacing:0.08em;font-weight:600;">
+              • ${dt.dayLabel.toUpperCase()}
+            </td>
+          </tr>`;
+      }
+      return `${dayHeaderRow}
+      <tr>
+        <td><strong>${dt.time}</strong></td>
+        <td>${it.temperature.toFixed(1)}°C</td>
+        <td>${it.feels_like.toFixed(1)}°C</td>
+        <td>${it.humidity}%</td>
+        <td>${it.pressure} hPa</td>
+        <td>${it.wind_speed} m/s</td>
+        <td style="text-transform:capitalize;">${it.description}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>GIỜ (GMT+7)</th><th>NHIỆT ĐỘ</th><th>CẢM GIÁC</th>
+            <th>ĐỘ ẨM</th><th>ÁP SUẤT</th><th>TỐC ĐỘ GIÓ</th><th>TRẠNG THÁI</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  renderCityTabs();
+  loadData();
+  setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
